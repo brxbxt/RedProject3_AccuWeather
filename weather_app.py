@@ -10,7 +10,8 @@ from datetime import datetime
 
 API_KEY1 = "hipMbZ8XD03CZM2O9xCunVPnR0XmpUgW"
 API_KEY2 = "RMErQKiIGTCT6RWuMV2W7sZ4g63c4sX4"
-API_KEY = "LQAXuFiGjr6Lwtccrmb5zO7OxAl4DGFt"
+API_KEY3 = "LQAXuFiGjr6Lwtccrmb5zO7OxAl4DGFt"
+API_KEY = "79yRLxllAMXZsmWDHUEkx9e3MTzTfGPs"
 LOCATIONS_FILE = "static/locations.json"
 
 def load_locations():
@@ -60,8 +61,6 @@ def get_weather_data(latitude, longitude):
         wind_speeds = []
         precip_probs = []
 
-        print(forecast_data["DailyForecasts"])
-
         for day in forecast_data["DailyForecasts"]:
             dates.append(datetime.fromtimestamp(day["EpochDate"]).strftime('%Y-%m-%d'))
             temperatures.append(round((day["Temperature"]["Minimum"]["Value"] + day["Temperature"]["Maximum"]["Value"]) / 2, 1))
@@ -97,70 +96,45 @@ def check_bad_weather(temperature, wind_speed, precipitation_probability):
             str_to_return += ", слишком высокая вероятность осадков"
     return str_to_return
 
-def get_city_name_from_coordinates(latitude, longitude):
-    url = "http://dataservice.accuweather.com/locations/v1/cities/geoposition/search"
-    params = {
-        "apikey": API_KEY,
-        "q": f"{latitude},{longitude}",
-        "language": "ru-ru"
-    }
-
-    try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-        city_name = str(data['ParentCity']['LocalizedName']).lower().title()
-        return city_name
-    except requests.exceptions.RequestException as e:
-        print(f"Ошибка при запросе к API: {e}")
-        return None
-    except (KeyError, IndexError) as e:
-        print(f"Ошибка обработки данных JSON: {e}")
-        return None
-
 app = Flask(__name__)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    weather_condition = None
+    weather_condition = []
     error_message = None
-    overall_condition = None
+    overall_condition = "Можно отправляться!"
 
     if request.method == 'POST':
         try:
             start_location = str(request.form['start_location']).lower().title()
+            stops = request.form['stops'].split(',') if request.form['stops'] else []
             end_location = str(request.form['end_location']).lower().title()
+            days = int(request.form['days'])
 
-            if start_location is None or end_location is None:
-                raise ValueError("Не удалось получить координаты.")
+            locations_to_check = [start_location] + [stop.strip().lower().title() for stop in stops] + [end_location]
+            for location in locations_to_check:
+                coords = get_coordinates(location)
+                if coords is None:
+                    raise ValueError(f"Не удалось найти координаты для '{location}'.")
 
-            start_latitude, start_longitude = get_coordinates(start_location)
-            end_latitude, end_longitude = get_coordinates(end_location)
-            if start_latitude is None or start_longitude is None or end_latitude is None or end_longitude is None:
-                raise ValueError("Не удалось получить координаты.")
+                forecast_data = get_weather_data(coords[0], coords[1])
+                if not forecast_data:
+                    raise ValueError(f"Ошибка получения данных о погоде для '{location}'.")
 
-            start_weather = get_weather_data(start_latitude, start_longitude)
-            end_weather = get_weather_data(end_latitude, end_longitude)
+                forecast_summary = f"Температура: {forecast_data['Temperatures'][:days]} °C, " \
+                                   f"Влажность: {forecast_data['Humidities'][:days]} %, " \
+                                   f"Ветер: {forecast_data['Wind_speeds'][:days]} км/ч, " \
+                                   f"Осадки: {forecast_data['Precip_probs'][:days]} %."
+                weather_condition.append({
+                    "location": location,
+                    "condition": forecast_summary
+                })
 
-            if start_weather is None:
-                raise ValueError(
-                    f"Ошибка получения данных о погоде для '{start_location}'. Возможно, проблема с API или сетью.")
-            if end_weather is None:
-                raise ValueError(
-                    f"Ошибка получения данных о погоде для '{end_location}'. Возможно, проблема с API или сетью.")
-
-            start_condition = check_bad_weather(start_weather['Temperatures'][0], start_weather['Wind_speeds'][0], start_weather['Precip_probs'][0])
-            end_condition = check_bad_weather(end_weather['Temperatures'][0], end_weather['Wind_speeds'][0], end_weather['Precip_probs'][0])
-
-            weather_condition = {
-                "start": {"location": start_location, "condition": start_condition},
-                "end": {"location": end_location, "condition": end_condition}
-            }
-
-            if start_condition != "Good" or end_condition != "Good":
-                overall_condition = "Сейчас не время для путешествий!"
-            else:
-                overall_condition = "Можно отправляться!"
+                # Проверка неблагоприятной погоды
+                for i in range(days):
+                    if forecast_data['Temperatures'][i] < 0 or forecast_data['Temperatures'][i] > 35 or forecast_data['Wind_speeds'][i] > 50 or forecast_data['Precip_probs'][i] > 70:
+                        overall_condition = "Сейчас не время для путешествий!"
+                        break
 
         except (KeyError, ValueError, requests.exceptions.RequestException) as e:
             error_message = f"Ошибка: {e}"
@@ -173,24 +147,22 @@ def add_city():
     success_message = None
 
     if request.method == 'POST':
+        city_name = request.form['city_name']
         latitude = request.form['latitude']
         longitude = request.form['longitude']
 
-        if latitude and longitude:
+        if city_name and latitude and longitude:
             try:
+                # Проверка корректности координат
                 latitude = float(latitude)
                 longitude = float(longitude)
 
-                city_name = str(get_city_name_from_coordinates(latitude, longitude)).lower().title()
-
-                if city_name:
-                    locations[city_name] = (latitude, longitude)
-                    save_locations(locations)
-                    success_message = f"Город {city_name} успешно добавлен!"
-                else:
-                    error_message = "Не удалось найти город по данным координатам."
+                # Сохранение города в словарь
+                locations[city_name] = [latitude, longitude]
+                save_locations(locations)  # Сохранение в файл
+                success_message = f"Город {city_name} успешно добавлен!"
             except ValueError:
-                error_message = "Ошибка: координаты должны быть числовыми."
+                error_message = "Ошибка: широта и долгота должны быть числовыми."
         else:
             error_message = "Ошибка: все поля должны быть заполнены."
 
@@ -202,11 +174,12 @@ def get_coordinates(location_name):
 # Dash-приложение для графиков
 app_dash = dash.Dash(__name__, server=app, url_base_pathname='/dashboard/')
 app_dash.layout = html.Div([
-    html.H1("Прогноз погоды на 5 дней"),
+    html.H1("Прогноз погоды на маршруте"),
     dcc.Dropdown(
         id='city-dropdown',
         options=[{'label': city, 'value': city} for city in locations.keys()],
-        value=list(locations.keys())[0] if locations else None
+        multi=True,
+        placeholder="Выберите точки маршрута"
     ),
     dcc.Graph(id='weather-graph'),
     dcc.RadioItems(
@@ -222,11 +195,11 @@ app_dash.layout = html.Div([
     ),
     dcc.RangeSlider(
         id='time-slider',
-        min=0,
-        max=4,
+        min=1,
+        max=5,
         step=1,
-        marks={i: f"День {i + 1}" for i in range(5)},
-        value=[0, 4]
+        marks={i: f"{i} дн." for i in range(1, 6)},
+        value=[1, 5]
     ),
     html.A(html.Button('Вернуться на главную'), href='/')
 ])
@@ -238,24 +211,27 @@ app_dash.layout = html.Div([
      Input('parameter-selector', 'value'),
      Input('time-slider', 'value')]
 )
-def update_graph(selected_city, parameter, time_range):
-    if not selected_city or not parameter:
+def update_graph(selected_cities, parameter, time_range):
+    if not selected_cities or not parameter:
         return go.Figure()
 
-    latitude, longitude = locations[selected_city]
-    forecast_data = get_weather_data(latitude, longitude)
-    if not forecast_data:
-        return go.Figure()
-
-    # Применение временного интервала
     start, end = time_range
-    x_data = forecast_data["Dates"][start:end + 1]
-    y_data = forecast_data[parameter][start:end + 1]
+    figure = go.Figure()
+    for city in selected_cities:
+        latitude, longitude = locations[city]
+        forecast_data = get_weather_data(latitude, longitude)
+        if not forecast_data:
+            continue
 
-    return go.Figure(
-        data=[go.Scatter(x=x_data, y=y_data, mode='lines+markers', name=parameter)],
-        layout=go.Layout(title=f"{parameter} в городе {selected_city} (5 дней)", xaxis_title="Дата", yaxis_title=parameter)
-    )
+        figure.add_trace(go.Scatter(
+            x=forecast_data['Dates'][start-1:end],
+            y=forecast_data[parameter][start-1:end],
+            mode='lines+markers',
+            name=city
+        ))
+
+    figure.update_layout(title="Прогноз погоды для маршрута", xaxis_title="Дата", yaxis_title=parameter)
+    return figure
 
 if __name__ == '__main__':
     app.run(debug=True)

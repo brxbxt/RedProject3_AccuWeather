@@ -11,18 +11,31 @@
     <form method="POST">
         <label for="start_location">Начальная точка:</label>
         <input type="text" id="start_location" name="start_location" required><br><br>
+
+        <label for="stops">Промежуточные точки (через запятую):</label>
+        <input type="text" id="stops" name="stops" placeholder="Например: Тула, Рязань"><br><br>
+
         <label for="end_location">Конечная точка:</label>
         <input type="text" id="end_location" name="end_location" required><br><br>
+
+        <label for="days">Прогноз на (дней):</label>
+        <select id="days" name="days" required>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+        </select><br><br>
+
         <input type="submit" value="Получить прогноз">
     </form>
 
     {% if weather_condition %}
         <h2>Прогноз:</h2>
-        <h3>{{ weather_condition.start.location }}:</h3>
-        <p>Погода: {{ weather_condition.start.condition }}</p>
-
-        <h3>{{ weather_condition.end.location }}:</h3>
-        <p>Погода: {{ weather_condition.end.condition }}</p>
+        {% for point in weather_condition %}
+            <h3>{{ point.location }}:</h3>
+            <p>Погода: {{ point.condition }}</p>
+        {% endfor %}
     {% endif %}
 
     {% if overall_condition %}
