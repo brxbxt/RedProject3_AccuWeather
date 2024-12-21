@@ -20,11 +20,9 @@
         <h2>Прогноз:</h2>
         <h3>{{ weather_condition.start.location }}:</h3>
         <p>Погода: {{ weather_condition.start.condition }}</p>
-        <p>Подробности: {{ weather_condition.start.details | tojson }}</p>
 
         <h3>{{ weather_condition.end.location }}:</h3>
         <p>Погода: {{ weather_condition.end.condition }}</p>
-        <p>Подробности: {{ weather_condition.end.details | tojson }}</p>
     {% endif %}
 
     {% if overall_condition %}
@@ -33,5 +31,6 @@
 
     <a href="/add_city"><button>Добавить новый город</button></a>
 
+    <a href="/dashboard"><button>Посмотреть графики</button></a>
 </body>
 </html>
