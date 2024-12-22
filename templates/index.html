@@ -30,6 +30,14 @@
         <input type="submit" value="Получить прогноз">
     </form>
 
+    <form method="POST" action="/map">
+        <input type="hidden" name="start_location" value="{{ request.form['start_location'] }}">
+        <input type="hidden" name="stops" value="{{ request.form['stops'] }}">
+        <input type="hidden" name="end_location" value="{{ request.form['end_location'] }}">
+        <button type="submit">Показать маршрут на карте</button>
+    </form>
+
+
     {% if weather_condition %}
         <h2>Прогноз:</h2>
         {% for point in weather_condition %}

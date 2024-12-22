@@ -7,11 +7,15 @@ import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
 from datetime import datetime
+import folium
+from folium.plugins import MarkerCluster
 
-API_KEY1 = "hipMbZ8XD03CZM2O9xCunVPnR0XmpUgW"
+API_KEY = "hipMbZ8XD03CZM2O9xCunVPnR0XmpUgW"
 API_KEY2 = "RMErQKiIGTCT6RWuMV2W7sZ4g63c4sX4"
 API_KEY3 = "LQAXuFiGjr6Lwtccrmb5zO7OxAl4DGFt"
-API_KEY = "79yRLxllAMXZsmWDHUEkx9e3MTzTfGPs"
+API_KEY4 = "79yRLxllAMXZsmWDHUEkx9e3MTzTfGPs"
+API_KEY5 = "C5j86QLKuAXUt1L6QjCI6cXgZvy0QgNI"
+API_KEY6 = "	Njyazi8XQ6u8eBcWnPxNFvJOXkYUXmGL"
 LOCATIONS_FILE = "static/locations.json"
 
 def load_locations():
@@ -224,14 +228,70 @@ def update_graph(selected_cities, parameter, time_range):
             continue
 
         figure.add_trace(go.Scatter(
-            x=forecast_data['Dates'][start-1:end],
-            y=forecast_data[parameter][start-1:end],
+            x=forecast_data['Dates'][start - 1:end],
+            y=forecast_data[parameter][start - 1:end],
             mode='lines+markers',
-            name=city
+            name=city,
+            text=[
+                f"{parameter}: {value}" for value in forecast_data[parameter][start - 1:end]
+            ],
+            hoverinfo="text"
         ))
 
-    figure.update_layout(title="Прогноз погоды для маршрута", xaxis_title="Дата", yaxis_title=parameter)
+        figure.update_layout(
+            title="Прогноз погоды для маршрута",
+            xaxis_title="Дата",
+            yaxis_title=parameter,
+            legend_title="Города",
+            hovermode="closest"
+        )
+
     return figure
+
+@app.route('/map', methods=['POST'])
+def show_map():
+    try:
+        # Получаем данные из формы
+        start_location = str(request.form['start_location']).lower().title()
+        stops = request.form['stops'].split(',') if request.form['stops'] else []
+        end_location = str(request.form['end_location']).lower().title()
+
+        locations_to_check = [start_location] + [str(stop.strip()).lower().title() for stop in stops] + [end_location]
+
+        # Создаем карту
+        map_center = locations.get(start_location) or [0, 0]
+        route_map = folium.Map(location=map_center, zoom_start=6)
+        marker_cluster = MarkerCluster().add_to(route_map)
+
+        for location in locations_to_check:
+            coords = get_coordinates(location)
+            if coords is None:
+                raise ValueError(f"Сначала посмотри прогноз для этого маршрута")
+
+            # Получаем прогноз погоды
+            forecast_data = get_weather_data(coords[0], coords[1])
+            if not forecast_data:
+                raise ValueError(f"Ошибка получения данных о погоде для '{location}'.")
+
+            # Добавляем маркер с информацией о погоде
+            popup_content = (
+                f"<b>{location}</b><br>"
+                f"Температура: {forecast_data['Temperatures'][0]} °C<br>"
+                f"Влажность: {forecast_data['Humidities'][0]} %<br>"
+                f"Ветер: {forecast_data['Wind_speeds'][0]} км/ч<br>"
+                f"Осадки: {forecast_data['Precip_probs'][0]} %"
+            )
+            folium.Marker(
+                location=coords,
+                popup=folium.Popup(popup_content, max_width=300),
+                tooltip=f"Погода в {location}"
+            ).add_to(marker_cluster)
+
+        # Сохраняем карту
+        route_map.save('templates/map.html')
+        return render_template('map.html')
+    except Exception as e:
+        return f"Ошибка: {e}"
 
 if __name__ == '__main__':
     app.run(debug=True)
